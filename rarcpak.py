@@ -53,8 +53,10 @@ def scan(st, p):
     nodes = []
     entries = []
 
-    entry_id_map = { '': 0xFFFFFFFF, p: 0 }
+    entry_id_map = { '': 0xFFFFFFFF, os.path.basename(p): 0 }
     dir_id = 1
+
+    relbase = os.path.dirname(p)
 
     for dirpath, dirs, filenames in os.walk(p):
         dirname = os.path.basename(dirpath)
@@ -63,13 +65,14 @@ def scan(st, p):
             node_name = 'ROOT'
         else:
             node_name = dirname[:4].upper()
+        relpath = dirpath[len(relbase):].lstrip('/')
 
         entry_idx = len(entries)
 
         name_offs = st.add(dirname)
 
         for subdir in dirs:
-            entry_id_map[os.path.join(dirpath, subdir)] = dir_id
+            entry_id_map[os.path.join(relpath, subdir)] = dir_id
             entries.append(dirent(st, subdir, dir_id))
             dir_id += 1
 
@@ -85,8 +88,8 @@ def scan(st, p):
                          data_size=0)
             entries.append(entry)
 
-        entries.append(dirent(st, '.', entry_id_map[dirpath]))
-        entries.append(dirent(st, '..', entry_id_map[os.path.dirname(dirpath)]))
+        entries.append(dirent(st, '.', entry_id_map[relpath]))
+        entries.append(dirent(st, '..', entry_id_map[os.path.dirname(relpath)]))
 
         node = dict(dirname=dirname,
                     name=node_name,
