@@ -88,7 +88,7 @@ def ext(f, ext_path):
             entry_id = ls(f)
             entry_csum = ls(f)
             entry_mode = ls(f)
-            if entry_mode != 0x9500:
+            if entry_mode not in (0x1100, 0x9500):
                 continue
             entry_name_off = ls(f)
 

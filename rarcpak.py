@@ -61,10 +61,11 @@ def scan(st, p):
     for dirpath, dirs, filenames in os.walk(p):
         dirname = os.path.basename(dirpath)
         if dirpath == p:
-            dirname = dirname.replace('.d', '')
+            # dirname = dirname.replace('.d', '')
+            dirname = 'archive'
             node_name = 'ROOT'
         else:
-            node_name = dirname[:4].upper()
+            node_name = dirname[:4].upper().ljust(4)
         relpath = dirpath[len(relbase):].lstrip('/')
 
         entry_idx = len(entries)
@@ -77,13 +78,15 @@ def scan(st, p):
             dir_id += 1
 
         for fn in sorted(filenames, key=lambda n: n.replace('_', '\xff')):
+            if fn.endswith('.bak'):
+                continue
             path = os.path.join(dirpath, fn)
             entry = dict(entry_id=len(entries),
                          name=fn,
                          path=path,
                          name_offs=st.add(fn),
                          nhash=nhash(fn),
-                         mode=0x9500,
+                         mode=0,
                          data_offs=0,
                          data_size=0)
             entries.append(entry)
@@ -117,7 +120,7 @@ def pak(f, ext_path):
     f.write(struct.pack('>L', len(nodes)))
     f.write('\0\0\0\x20') # root
     f.write(struct.pack('>L', len(entries)))
-    f.write(struct.pack('>L', len(nodes) * 0x20)) # entry_off
+    f.write('\0\0\0\0') # entry_off
 
     f.write('\0\0\0\0') # str_pool_size
     f.write('\0\0\0\0') # str_pool_off
@@ -132,6 +135,8 @@ def pak(f, ext_path):
                             node['nhash'],
                             node['n_entries'],
                             node['entry_idx']))
+
+    entry_off = pad(f)
     for entry in entries:
         entry['backpatch'] = f.tell()
         f.write(struct.pack('>HHHHLL',
@@ -142,15 +147,20 @@ def pak(f, ext_path):
                             entry['data_offs'],
                             entry['data_size']))
         f.write('\0\0\0\0')
+    f.seek(0x2C, os.SEEK_SET)
+    f.write(struct.pack('>L', entry_off - 0x20))
+    f.seek(0, os.SEEK_END)
 
     stoffs = pad(f)
     st.serialize(f)
     dtbegin = pad(f)
-    f.seek(0x30, os.SEEK_SET)
-    f.write(struct.pack('>LL', dtbegin - stoffs, stoffs - 0x20))
 
     f.seek(0x0C, os.SEEK_SET)
     f.write(struct.pack('>L', dtbegin - 0x20))
+
+    f.seek(0x30, os.SEEK_SET)
+    f.write(struct.pack('>LL', dtbegin - stoffs, stoffs - 0x20))
+
     f.seek(0, os.SEEK_END)
 
     for entry in entries:
@@ -159,9 +169,15 @@ def pak(f, ext_path):
 
         dtoffs = pad(f)
         dest = open(entry['path'], 'rb')
+        magic = dest.read(4)
+        dest.seek(0)
         f.write(dest.read())
         dest.close()
         end = f.tell()
+
+        if magic == 'Yaz0':
+            f.seek(entry['backpatch'] + 0x4, os.SEEK_SET)
+            f.write(struct.pack('>H', 0x9500))
 
         f.seek(entry['backpatch'] + 0x8, os.SEEK_SET)
         f.write(struct.pack('>LL', dtoffs - dtbegin, end - dtoffs))
@@ -170,6 +186,10 @@ def pak(f, ext_path):
     end = pad(f)
     f.seek(0x4, os.SEEK_SET)
     f.write(struct.pack('>L', end))
+
+    f.seek(0x10, os.SEEK_SET)
+    dts = end - dtbegin
+    f.write(struct.pack('>LL', dts, dts))
 
 def main():
     filename = sys.argv[1]
